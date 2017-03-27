@@ -1,0 +1,72 @@
+README that actually FAQ.
+
+What is it about?
+loperIRCLogBot is an IRC logging bot made for writing log-files. It could connect to one server and log one channel.
+When someone says bot's name at the chat, the URL to logs could be published.
+
+Is it works for Windows™?
+Nope
+
+And if I compile it for Windows™?
+It won't.
+
+OS X? BSD?
+I don't know. Give a try, let me know.
+
+How to build?
+Type 'make'
+
+It doesn't work and you don't provide ./configure, what should I do? Why is it happening?
+Change Makfile and ./files/Makefile. They're simple as hell. I don't know much about ./configure, so there is no such option. Sorry.
+
+I see some warnings during compilation. Is it ok?
+Yeah, I hope so. I also saw them. When I find the time, I'll do something with this.
+
+Where is the executable? Where should I look for this and how to start?
+$ ./bin/loperIRCLogBot
+
+What about license?
+Source code, which is actually 'loperIRCLogBot.c' file spreads under the GNU General Public License v.3 license. You can find it in LICENSE file or just visit www.gnu.org (it should be there for sure). It also uses (a little bit) modified libircclient writted by George Yunaev. Libircclient is licensed under Lesser General Public License version 3 or higher. 
+
+Is it possible to let this app work with shared libraries of the libircclient that I already have in my distro?
+Nope. The little modification needed for loperIRCLogBot doesn't let you utilize original non-changed library. Take a look on a patch stored at ./files folder (that's the reason).
+
+Where is the application configuration should be set? How?
+At the ./bin/bot.conf file. You could generate template by passing -g option: './loperIRCLogBot -g'. It should stored in same folder with executable file. No other option for this for now.
+Configuration file contains 10 lines, so make sure that you didn't define any sensetive information below these 10 lines.
+Here is an example:
+server:          irc.example.com
+channel:         #channel
+port:            6667
+nick:            awesome_nick_here
+username:        usrname
+realname:        realname
+password:        0 
+maxNickLength:   30
+logPath:         0 
+link:            http://localhost:8080/logs/
+ 
+'server' should be set as described. NO "irc://" or stuff like this allowed, no slashes and backslashes.
+'channel' is the channel to log. Should be started by '#' symbol
+'port' is server port.
+'nick' is nick. Restricted by 'maxNickLength'. It means, that your nick shouldn't be greater then 'maxNickLength'.
+'username' is username that defined as second parameter at your nick-on-server. Like nick!~[USERNAME]@ip_adress.
+'realname' is realname. Don't ask, just set here something, ok?
+'password' is a password for the nick. It goes to server as '/nickserv IDENTIFY [password]'. If '0' then no password needed,
+'maxNickLength' is a maximum length of the nick. Various servers restrict the length of the nick. '30' should be enough. '128' is maximum, but I'm not sure that you have to set '128' in here, because if server doesn't support nicknames with such lenght, you could face to unforseen behavior in the application.
+'logPath' is a path to 'logs' directory, where all your logs will be stored. If '0' then they will be stored at executable file folder. Pay attention, that logPath should be defined as full path. Not like ~/logs of ../../logs.
+'link' is a link, that will be provided to anyone on the channel, who starts his/her message by your nick. If '0' then no link will be shown.
+
+Is there any other options for this application?
+Yes. When you start application, you could pass next options:
+  -g, --genconf         Create configuration file template. Attention! It will overrite your existing configuration file.
+  -n, --nomessage       Don't print any messages anywhere
+  -v, --version         Application version
+      --help            Help message
+Pay attention, that '-n' is just for turning-off messages, there is no stuff like daemon-mode inside. Yet.
+
+Any chance to log more than one channel?
+Nope.
+
+If connection is lost, could this bot re-connect? When he will do it?
+In 20 minutes. Maybe earlier. Depends on activity at the channel and pings from the server. It's implemented not the best way at the moment.
