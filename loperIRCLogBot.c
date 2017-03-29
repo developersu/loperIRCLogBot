@@ -22,7 +22,7 @@
 // set if you want to turn mode +x on while connecting
 #define X_MODE
 
-#define PING_DEBUG
+#define NPING_DEBUG
 #define NDEBUG
 #define NDEBUG_LOG
 
