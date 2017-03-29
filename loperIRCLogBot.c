@@ -1,7 +1,7 @@
 /***********************************************************************************
  * Author: Dmitry Isaenko                                                          *
- * License: GPL v.3                                                                *
- * Version: 1.0                                                                    *
+ * License: GNU GPL v.3                                                                *
+ * Version: 1.1                                                                    *
  * Site: https://developersu.blogspot.com/                                         *
  * 2017, Russia                                                                    *
  ***********************************************************************************/
@@ -50,6 +50,7 @@ typedef struct conf_sruct {
 	int maxNickLength;
 	char logPath[PATH_MAX];				
 	char link[2048];				// should be enough to store link
+	int reJoin;					// 1 - yes, 0 - no
 } configuration;
 
 
@@ -63,9 +64,9 @@ configuration load_config(int run, char * nick_path) {
 
 	FILE * conf;
 	
-	static char fileArray[10][2048];	// user setup stored here and avaliable by any call after initial (by passing 0 to function)
+	static char fileArray[15][2048];	// user setup stored here and avaliable by any call after initial (by passing 0 to function)
 	char * st;
-	char sta[10][2][2048];			// should be 3D
+	char sta[15][2][2048];			// should be 3D
 	static configuration C;			//returning structure
 	
 	char confFilePath[PATH_MAX];
@@ -80,7 +81,7 @@ configuration load_config(int run, char * nick_path) {
 		if ( (conf = fopen(confFilePath,"r")) != NULL) {
 			for (i=0;(!feof(conf));i++){
 				fgets(fileArray[i], sizeof(fileArray[i]), conf);
-				if (i>=9)		// 10 lines is max size for config file
+				if (i>=14)		// 15 lines is max size for config file
 					break;
 			}
 
@@ -88,14 +89,14 @@ configuration load_config(int run, char * nick_path) {
 
 		#ifdef DEBUG_LOG	
 		printf("___Content of the file___\n");
-		for (i=0;i<10; i++){
+		for (i=0;i<15; i++){
 			printf("%s", fileArray[i]);
 		}
 		printf("______________________\n");
 		#endif
 
 		// Parsing configuration file			- IF STRING DOESN'T HAVE ":" - SKIP IT
-		for (i=0;i<10;i++){
+		for (i=0;i<15;i++){
 			if ( strstr(fileArray[i], ":") != NULL ) {    
 				st = strtok(fileArray[i], ": \t\n");	// if we can't get ANY parameter at the string, that have ":" inside, then skip this string
 				if (st != NULL){			
@@ -123,7 +124,7 @@ configuration load_config(int run, char * nick_path) {
 		}
 
 
-		for (i=0;i<10;i++){
+		for (i=0;i<15;i++){
 			if ( strstr(sta[i][0], "server") != NULL )
 				checksum |= 1<<0;
 			else if ( strstr(sta[i][0], "channel") != NULL )
@@ -144,10 +145,12 @@ configuration load_config(int run, char * nick_path) {
 				checksum |= 1<<8;
 			else if ( strstr(sta[i][0], "link") != NULL )
 				checksum |= 1<<9;
+			else if ( strstr(sta[i][0], "reJoin") != NULL )
+				checksum |= 1<<10;
 				
 		}
 
-		if (checksum != 0b1111111111){
+		if (checksum != 0b11111111111){
 			C.status = checksum;			// incorrect number of settings defined
 			return C;
 			}
@@ -156,7 +159,7 @@ configuration load_config(int run, char * nick_path) {
 	
 			C.status = 0;				//  OK = 0.
 	
-			for (i=0; i<10; i++){
+			for (i=0; i<15; i++){
 				if ((strcmp(sta[i][0], "server")) == 0)
 					strcpy(C.server, sta[i][1]);
 				else if ( (strcmp(sta[i][0], "port")) == 0)
@@ -196,6 +199,12 @@ configuration load_config(int run, char * nick_path) {
 					strcpy(C.link, "Logs: ");
 					strcat(C.link, sta[i][1]);
 				}
+				else if ( (strcmp(sta[i][0], "reJoin")) == 0){
+					if (strcmp(sta[i][1], "yes") == 0 || strcmp(sta[i][1], "Yes") == 0 )
+						C.reJoin = 1;
+					else
+						C.reJoin = 0;
+				}
 			}
 			if (strlen(C.nick) > C.maxNickLength)
 				C.nick[C.maxNickLength] = '\0';				// yeah, they will love it, before set nick name longer then 128 char =(
@@ -211,7 +220,7 @@ configuration load_config(int run, char * nick_path) {
 	
 		#ifdef DEBUG_LOG
 		printf("___Recieved keys from the file___\n");
-		for (i=0;i<10; i++){
+		for (i=0;i<15; i++){
 			printf("%s - %s\n", sta[i][0], sta[i][1]);
 		}
 		printf("______________________\n");
@@ -238,8 +247,6 @@ int set_log_dir(char * logdir){
 	if (stat(logdir, &st) == -1) {
 		if (mkdir(logdir, 0777) != 0 )
 			return 1;
-		else
-			return 0;
 	}
 	return 0;
 }
@@ -258,8 +265,10 @@ void event_connect (irc_session_t * session, const char * event, const char * or
 
 void dump_event (irc_session_t * session, const char * event, const char * origin, const char ** params, unsigned int count)
 {
+#ifdef DEBUG
 	char buf[512];
 	int cnt;
+#endif
 	char nowTime[20];
 
 	char nickBuf[128];
@@ -267,15 +276,16 @@ void dump_event (irc_session_t * session, const char * event, const char * origi
 
 	time_t now = time(NULL);
 
+#ifdef DEBUG
 	buf[0] = '\0';
-
+#endif
 	FILE * fp;		// set FD for the file for logs
 	
 	is_alive( 1, time(NULL) );				// update timestamp 
 
 	configuration C = load_config(1, "");
 
-#if defined (DEBUG)	
+#ifdef DEBUG
 	for ( cnt = 0; cnt < count; cnt++ ) {
 		if ( cnt )
 			strcat (buf, "|");
@@ -308,12 +318,12 @@ void dump_event (irc_session_t * session, const char * event, const char * origi
 
 		if (!strcmp(event,"KICK")){
 		// Reloading configuration in case our nick has been changed recently
-			if ( !(strcmp(params[1], C.nick)) ){
+			if ( !(strcmp(params[1], C.nick)) && C.reJoin == 1 ){
 				event_connect (session, event, origin, params, count);
 			}
 		}
 		else if (!strcmp(event, "CHANNEL"))
-			if (strncmp(params[1], C.nick, strlen(C.nick)) == 0)
+			if (strncmp(params[1], C.nick, strlen(C.nick)) == 0 )
 				strlen(C.link) == 7 ? irc_cmd_msg(session, params[0], ";)") : irc_cmd_msg(session, params[0], C.link);
 
 		fclose (fp);
@@ -337,11 +347,11 @@ void event_ctcp_req(irc_session_t * session, const char * event, const char * or
 
 	if( strcmp (params[0], "VERSION") == 0 ){
 		dump_event (session, event, origin, params, count);
-		irc_cmd_ctcp_reply(session, origin, "VERSION loperIRCLogBot v.1.0");
+		irc_cmd_ctcp_reply(session, origin, "VERSION loperIRCLogBot v.1.1");
 	}
 	else if( strcmp (params[0], "SOURCE") == 0 ){
 		dump_event (session, event, origin, params, count);
-		irc_cmd_ctcp_reply(session, origin, "SOURCE loperIRCLogBot v.1.0");
+		irc_cmd_ctcp_reply(session, origin, "SOURCE loperIRCLogBot v.1.1");
 	}
 	else if( strcmp (params[0], "TIME") == 0 ){
 		dump_event (session, event, origin, params, count);
@@ -353,7 +363,7 @@ void event_ctcp_req(irc_session_t * session, const char * event, const char * or
 	}
 	else if( strcmp (params[0], "CLIENTINFO") == 0 ){
 		dump_event (session, event, origin, params, count);
-		irc_cmd_ctcp_reply(session, origin, "CLIENTINFO loperIRCLogBot v.1.0 - Supported tags: VERSION, SOURCE, TIME, PING, CLIENTINFO");
+		irc_cmd_ctcp_reply(session, origin, "CLIENTINFO loperIRCLogBot v.1.1 - Supported tags: VERSION, SOURCE, TIME, PING, CLIENTINFO");
 	}
 }
 
@@ -428,22 +438,25 @@ static void event_notice (irc_session_t * session, const char * event, const cha
 void event_unknown(irc_session_t * session, const char * event, const char * origin, const char ** params, unsigned int count)
 {
 // implemented to log server PING requests and to 'teach' is_alive() function
-	is_alive( 2, time(NULL) );				
+	if( strcmp(event, "PING") == 0 )
+		is_alive( 2, time(NULL) );				
 }
-int make_template(){
+int make_template(char * dest){
 	FILE * templ;
+	strcat (dest, "bot.conf");
 
-	if ( (templ = fopen("bot.conf","w")) != NULL) {
-		fprintf(templ, "server:          \n");
-		fprintf(templ, "channel:         \n");
-		fprintf(templ, "port:            \n");
-		fprintf(templ, "nick:            \n");
-		fprintf(templ, "username:        \n");
-		fprintf(templ, "realname:        \n");
-		fprintf(templ, "password:      0 \n");
+	if ( (templ = fopen(dest,"w")) != NULL) {
+		fprintf(templ, "server:        \n");
+		fprintf(templ, "channel:       \n");
+		fprintf(templ, "port:          \n");
+		fprintf(templ, "nick:          \n");
+		fprintf(templ, "username:      \n");
+		fprintf(templ, "realname:      \n");
+		fprintf(templ, "password:      0\n");
 		fprintf(templ, "maxNickLength: 30\n");
-		fprintf(templ, "logPath:       0 \n");
-		fprintf(templ, "link:          0 \n");
+		fprintf(templ, "logPath:       0\n");
+		fprintf(templ, "link:          0\n");
+		fprintf(templ, "reJoin:        yes\n");
 		fclose(templ);
 		return 0;
 	}
@@ -476,7 +489,7 @@ int is_alive( int state, time_t timeRec ){
 		timeSav = (int) timeRec;
 		signature = 0;
 		#ifdef PING_DEBUG
-		printf("\n1-normal event\ntimeSav (re-written)        = %d\n", timeSav);					//debug
+		printf("\n1-normal event\ntimeSav (re-written)       = %d\n", timeSav);					//debug
 		printf("signature (new)            = %d\n", signature);							//debug
 		printf("defaultTimeout             = %d\n", defaultTimeout);						//debug
 		#endif
@@ -484,14 +497,14 @@ int is_alive( int state, time_t timeRec ){
 	}
 	else if (state == 2){
 		if (signature == 1){
-			defaultTimeout = ( (int) timeRec - timeSav) * 1.5;				// 1.5 to make sure
+			defaultTimeout = ( (int) timeRec - timeSav) * 1.5;						// 1.5 to make sure
 		} 
 		else 
 			signature = 1;
 		timeSav = (int) timeRec;
 
 		#ifdef PING_DEBUG
-		printf("\n2-PING event\ntimeSav (re-written)          = %d\n", timeSav);					//debug
+		printf("\n2-PING event\ntimeSav (re-written)         = %d\n", timeSav);					//debug
 		printf("signature (new)            = %d\n", signature);							//debug
 		printf("defaultTimeout  (new)      = %d\n", defaultTimeout);						//debug
 		#endif
@@ -501,9 +514,9 @@ int is_alive( int state, time_t timeRec ){
 		timeSav = (int) timeRec;
 		defaultTimeout = TIME_TO_DIE;
 		#ifdef PING_DEBUG
-		printf("\n3-redefine of timeout\ntimeSav              = %d\n", timeSav);				//debug
-		printf("signature             = %d\n", signature);							//debug
-		printf("defaultTimeout    new = %d\n", defaultTimeout);							//debug
+		printf("\n3-redefine of timeout\ntimeSav                    = %d\n", timeSav);				//debug
+		printf("signature                  = %d\n", signature);							//debug
+		printf("defaultTimeout    new      = %d\n", defaultTimeout);						//debug
 		#endif
 		return 0;
 	}
@@ -556,7 +569,7 @@ int main(int argc, char *argv[]) {
 				printf("y/n: ");
 				switch (getchar()){
 					case 'y': case 'Y': 
-						if (make_template() == 0){
+						if (make_template(dest) == 0){
 							printf("Configuratation template created.\n");
 							return 0;
 						}
@@ -596,7 +609,7 @@ int main(int argc, char *argv[]) {
 			fclose(stdin);
 		}
 		else if ( (strcmp("-v", argv[1]) == 0) ||  (strcmp("--version", argv[1]) == 0)) {
-			printf("loperLogBot: 1.0 - build %s %s\n", __TIME__, __DATE__);
+			printf("loperLogBot: 1.1 - build %s %s\n", __TIME__, __DATE__);
 			return 0;
 		}
 		else {
@@ -614,8 +627,7 @@ int main(int argc, char *argv[]) {
 	config = load_config(0, dest);
 
 	if (config.status == 0){
-		printf("SETTINGS\n--------\nstatus - %d\nserver - %s\nchannel - %s\nport - %d\nnick - %s\nusername - %s\nrealname - %s\npassword - %s\nmaxNickLength - %d\nlogPath - %s\nlink - %s\n---------------------------\n", \
-			config.status, config.server, config.channel, config.port, config.nick, config.username, config.realname, config.password, config.maxNickLength, config.logPath, config.link);
+		printf("SETTINGS\n--------\nstatus          - %d\nserver          - %s\nchannel         - %s\nport            - %d\nnick            - %s\nusername        - %s\nrealname        - %s\npassword        - %s\nmaxNickLength   - %d\nlogPath         - %s\nlink            - %s\nreJoin          - %d\n---------------------------\n", config.status, config.server, config.channel, config.port, config.nick, config.username, config.realname, config.password, config.maxNickLength, config.logPath, config.link, config.reJoin);
 	
 		if ( set_log_dir(config.logPath) != 0){				// set logs directory
 			printf ("Unable to create directory for log files (%s)\nPlease make sure that you have premissions to write in this directory\n", config.logPath);
@@ -761,6 +773,10 @@ int main(int argc, char *argv[]) {
 		}
 	else if (config.status == 511){						
 		printf("Configuration file issue: probably 'link' missed\n");
+		return 1;
+		}
+	else if (config.status == 1023){						
+		printf("Configuration file issue: probably 'reJoin' missed\n");
 		return 1;
 		}
 	else {
