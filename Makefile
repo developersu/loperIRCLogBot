@@ -9,7 +9,7 @@ all: lib loperIRCLogBot
 
 lib:
 	cp ./files/* ./libircclient-1.9/src/
-	patch -p0 -i ./files/patchFile
+#	patch -p0 -i ./files/patchFile
 	$(MAKE) -C  ./libircclient-1.9/src/ || exit 1;
 	cp -r ./libircclient-1.9/include/ ./libircclient
 	cp ./libircclient-1.9/src/libircclient.a .
@@ -17,8 +17,8 @@ lib:
 loperIRCLogBot: loperIRCLogBot.c
 	$(MKDIR_P) ./bin
 #	$(CC) $(CFLAGS) loperIRCLogBot.c -o ./bin/loperIRCLogBot
-	$(CC) loperIRCLogBot.c libircclient.a -o ./bin/loperIRCLogBot
+	$(CC) -std=gnu89 loperIRCLogBot.c libircclient.a -o ./bin/loperIRCLogBot 
 
 
 clean:
-	rm -rf ./bin/*.o ./bin/loperIRCLogBot ./libircclient libircclient.a  ./libircclient-1.9/src/libircclient.o ./libircclient-1.9/src/libircclient.a
+	rm -rf ./bin/*.o ./bin/loperIRCLogBot ./libircclient libircclient.a  ./libircclient-1.9/src/libircclient.o ./libircclient-1.9/src/libircclient.a ./libircclient-1.9/src/config.h ./libircclient-1.9/src/Makefile

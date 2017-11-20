@@ -1,7 +1,7 @@
 /***********************************************************************************
  * Author: Dmitry Isaenko                                                          *
- * License: GNU GPL v.3                                                                *
- * Version: 1.1                                                                    *
+ * License: GNU GPL v.3                                                            *
+ * Version: 1.2                                                                    *
  * Site: https://developersu.blogspot.com/                                         *
  * 2017, Russia                                                                    *
  ***********************************************************************************/
@@ -16,8 +16,8 @@
 // only to get PATH_MAX
 #include <limits.h>
 
-//define default max time before re-connect happens (20 min).
-#define TIME_TO_DIE	1200
+//define period before sending PING to server (5 min - 300).
+#define TIME_TO_PING	300
 
 // set if you want to turn mode +x on while connecting
 #define X_MODE
@@ -36,7 +36,7 @@
 
 // TODO normal deamon-mode functionality
 // TODO make it multi-channel
-// TODO-feachure make an ability to define log path for the bot.conf?
+// TODO-feachure make an ability to define log path for the bot.conf? Or move it to /etc/
 
 typedef struct conf_sruct {
         int status;
@@ -54,7 +54,7 @@ typedef struct conf_sruct {
 } configuration;
 
 
-configuration load_config(int run, char * nick_path) {	
+configuration load_config(int run, char * nick_or_path) {	
 /*
  * if run = 0 we load config from the file
  * if run = 1 we return configuration structure stored in this function
@@ -75,7 +75,7 @@ configuration load_config(int run, char * nick_path) {
 	
 	if (run == 0) {
 	//	the first call
-		strcpy(confFilePath, nick_path);
+		strcpy(confFilePath, nick_or_path);
 		strcat(confFilePath, "bot.conf");		// add bot.conf to path-to-executable
 
 		if ( (conf = fopen(confFilePath,"r")) != NULL) {
@@ -182,10 +182,10 @@ configuration load_config(int run, char * nick_path) {
 				}
 				else if ( (strcmp(sta[i][0], "logPath")) == 0){
 					if (strcmp(sta[i][1], "0") == 0)
-						strcpy(C.logPath, nick_path);
+						strcpy(C.logPath, nick_or_path);
 					else {
 						if (sta[i][1][0] != '/'){
-							C.status = -255;
+							C.status = -3;
 							return C;
 						}
 						else{
@@ -232,7 +232,7 @@ configuration load_config(int run, char * nick_path) {
 		return C;				// just return already loaded structure by request
 	}
 	else if ( run == 2){				// save nick recieved
-		strcpy(C.nick, nick_path);
+		strcpy(C.nick, nick_or_path);
 		return C;
 	}
 		
@@ -251,9 +251,82 @@ int set_log_dir(char * logdir){
 	return 0;
 }
 
+// Function to print time stamps when writing to console
+void printTimeStamp(){
+	char timeStamp[22];
+	time_t now = time(NULL);
+
+	strftime(timeStamp, 22, "%d %b %Y %X ", localtime(&now));
+	printf("%s", timeStamp);
+}
+
+// Mainly used to update is_alive
+void  event_ctcp_rep(irc_session_t *session, const char *event, const char *origin, const char **params, unsigned int count){	// handle own ctcp requests - get recieved data and do something with it
+	configuration C = load_config(1, "");		//load config to get current nickname
+
+	#ifdef PING_DEBUG
+	printf("\nReply from my CTCP, where USER = %s\n", origin);
+	#endif
+	if (strncmp(origin, C.nick, strlen(C.nick)) == 0){		// if bot generated response, then it's ping for internal use. (Ok, documentation is 80% clear on this, it will work but in future should be checked)
+		is_alive(1, time(NULL), session);
+	}
+}
+
+/* Handle timeouts before re-connect (rewrite in January 2038)
+ state = 0 - get status
+ state = 1 - write status
+
+ returns 0 - OK
+ returns 1 - not OK
+*/
+int is_alive( int state, time_t timeGot, irc_session_t * session){				// in future, it should be stand-alone thread
+	static int defaultTimeout = TIME_TO_PING;	
+	static time_t timeSav;	
+	static int pingRequestSent = 0;			// 0 - not sent, 1 - already sent
+	configuration C = load_config(1, "");		//load config to get current nickname
+
+	#ifdef PING_DEBUG
+	printf("is_alive:ping = %d\n", pingRequestSent);
+	#endif
+
+	if (state == 0)	{	
+		if ( ((long) timeGot - timeSav) > defaultTimeout ) {	// ok, it's time to send PING to yourself or probably we have problems
+			if (pingRequestSent == 0){			// if we didn't sent PING request before, let's do it and change pingRequestSent
+				#ifdef PING_DEBUG
+				printf("PANIC - Request sent\n");
+				printf("  stored time   = %ld\n",timeSav);
+				printf("  recieved time = %ld\n",timeGot);
+				#endif
+				irc_cmd_ctcp_request(session, C.nick, "PING");
+				pingRequestSent = 1;
+				return 0;
+			}
+			else{						// we already sent PING
+				if (((long) timeGot - timeSav) > (defaultTimeout+180)){	// we know, that the time is greater than stored one, so we add 3min(180) and if it's greater, then re-connect
+					#ifdef PING_DEBUG
+					printf("Now we have problems\n");
+					#endif
+					return 1;
+				}
+				else 
+					return 0;
+			}
+		}
+	}
+	else if ( state == 1 ){
+		timeSav = timeGot;				// re-write stored time
+		pingRequestSent = 0;					// reset pingRequestSent
+		#ifdef PING_DEBUG
+		printf("\n1-WRITE event\nTime Saved (re-written)       = %ld\n", timeSav);					//debug
+		printf("defaultTimeout             	= %d\n", defaultTimeout);						//debug
+		#endif
+		return 0;
+	}
+	return 0;		// how it could be possible to come here? ok, whatever
+}
 void event_connect (irc_session_t * session, const char * event, const char * origin, const char ** params, unsigned int count)
 {	
-	is_alive( 1, time(NULL) );				// initial timestamp written into the watchdog function
+	is_alive(1, time(NULL), session );				// this time really 'initial' timestamp written into the watchdog function
 
 //	dump_event (session, event, origin, params, count);
 	configuration C = load_config(1, "");
@@ -281,8 +354,6 @@ void dump_event (irc_session_t * session, const char * event, const char * origi
 #endif
 	FILE * fp;		// set FD for the file for logs
 	
-	is_alive( 1, time(NULL) );				// update timestamp 
-
 	configuration C = load_config(1, "");
 
 #ifdef DEBUG
@@ -307,11 +378,11 @@ void dump_event (irc_session_t * session, const char * event, const char * origi
 
 		!(strcmp(event,"CHANNEL")) ? fprintf(fp,"%s <%s>: %s\n",nowTime, nickBuf, params[1]): 
 		!(strcmp(event,"ACTION"))  ? fprintf(fp,"%s %s %s\n",nowTime, nickBuf, params[1]): 
-		!(strcmp(event,"JOIN"))    ? fprintf(fp,"%s >> %s [%s] joined %s\n",nowTime, nickBuf, hostBuf, params[0]): 
+		!(strcmp(event,"JOIN"))    ? fprintf(fp,"%s >>  %s [%s] joined %s\n",nowTime, nickBuf, hostBuf, params[0]): 
 		!(strcmp(event,"INVITE"))  ? fprintf(fp,"%s %s invites %s to %s\n",nowTime, nickBuf, params[0], params[1]): 
 		!(strcmp(event,"KICK"))    ? fprintf(fp,"%s !<< %s kicked by %s [%s] with reason: %s\n",nowTime, params[1], nickBuf, hostBuf, params[2]):
 		!(strcmp(event,"MODE"))    ? strcmp(nickBuf, hostBuf) == 0 ? 0: fprintf(fp,"%s -!- %s [%s] set %s %s\n",nowTime, nickBuf, hostBuf, params[1], params[2] ? params[2]:""): 
-		!(strcmp(event,"PART"))    ? fprintf(fp,"%s << %s [%s] parted: %s \n",nowTime, nickBuf, hostBuf, params[1]): 
+		!(strcmp(event,"PART"))    ? fprintf(fp,"%s <<  %s [%s] parted: %s \n",nowTime, nickBuf, hostBuf, params[1]): 
 		!(strcmp(event,"TOPIC"))   ? fprintf(fp,"%s -!- %s [%s] has changed topic to: %s \n",nowTime, nickBuf, hostBuf, params[1]): 
 		!(strcmp(event,"QUIT"))    ? fprintf(fp,"%s << %s [%s] quit: %s \n",nowTime, nickBuf, hostBuf, params[0]): 
 		!(strcmp(event,"NICK"))    ? fprintf(fp,"%s -!- %s [%s] changed nick to: %s \n",nowTime, nickBuf, hostBuf, params[0]): 0;
@@ -347,11 +418,11 @@ void event_ctcp_req(irc_session_t * session, const char * event, const char * or
 
 	if( strcmp (params[0], "VERSION") == 0 ){
 		dump_event (session, event, origin, params, count);
-		irc_cmd_ctcp_reply(session, origin, "VERSION loperIRCLogBot v.1.1");
+		irc_cmd_ctcp_reply(session, origin, "VERSION loperIRCLogBot v.1.2");
 	}
 	else if( strcmp (params[0], "SOURCE") == 0 ){
 		dump_event (session, event, origin, params, count);
-		irc_cmd_ctcp_reply(session, origin, "SOURCE loperIRCLogBot v.1.1");
+		irc_cmd_ctcp_reply(session, origin, "SOURCE loperIRCLogBot v.1.2");
 	}
 	else if( strcmp (params[0], "TIME") == 0 ){
 		dump_event (session, event, origin, params, count);
@@ -363,7 +434,7 @@ void event_ctcp_req(irc_session_t * session, const char * event, const char * or
 	}
 	else if( strcmp (params[0], "CLIENTINFO") == 0 ){
 		dump_event (session, event, origin, params, count);
-		irc_cmd_ctcp_reply(session, origin, "CLIENTINFO loperIRCLogBot v.1.1 - Supported tags: VERSION, SOURCE, TIME, PING, CLIENTINFO");
+		irc_cmd_ctcp_reply(session, origin, "CLIENTINFO loperIRCLogBot v.1.2 - Supported tags: VERSION, SOURCE, TIME, PING, CLIENTINFO");
 	}
 }
 
@@ -434,13 +505,6 @@ static void event_notice (irc_session_t * session, const char * event, const cha
 
 }
 
-
-void event_unknown(irc_session_t * session, const char * event, const char * origin, const char ** params, unsigned int count)
-{
-// implemented to log server PING requests and to 'teach' is_alive() function
-	if( strcmp(event, "PING") == 0 )
-		is_alive( 2, time(NULL) );				
-}
 int make_template(char * dest){
 	FILE * templ;
 	strcat (dest, "bot.conf");
@@ -465,63 +529,36 @@ int make_template(char * dest){
 }
 
 
-/* Handle timeouts before re-connect (rewrite in January 2038)
- state = 0 - get status
- state = 1 - write status
- state = 2 - write PING status
- state = 3 - define defaultTimeout due the connection to the server
-
- returns 0 - OK
- returns 1 - not OK
-*/
-int is_alive( int state, time_t timeRec ){				
-	static int defaultTimeout = TIME_TO_DIE;			
-	static int timeSav;	
-	static int signature = 0;
-
-	if (state == 0)	{						
-		if ( ((int) timeRec - timeSav) < defaultTimeout )
-			return 0;
-		else 
-			return 1;
+void reportSettingsIssues(int sum){
+	char *setLst[] = {"server", 
+			"channel", 
+			"port", 
+			"nick", 
+			"username", 
+			"realname", 
+			"password", 
+			"maxNickLenght", 
+			"logPath", 
+			"link", 
+			"reJoin"};
+	int i;
+	
+	switch (sum){
+		case -1:
+			printf("Configuration file issue: value or attribute missed or redundant\n");
+			break;
+		case -2:
+			printf ("Unable to open configuration file\n");
+			break;
+		case -3:
+			printf("Configuration file issue: 'logPath' is not defined as absolute path\n");
+			break;
+		default:
+			printf("Configuration file issue. Next field(s) not found:\n");
+			for (i=0; i<11; i++)
+				if ((sum & (1<<i)) != (1<<i))
+					printf("\t'%s'\n", setLst[i]);
 	}
-	else if ( state == 1 ){
-		timeSav = (int) timeRec;
-		signature = 0;
-		#ifdef PING_DEBUG
-		printf("\n1-normal event\ntimeSav (re-written)       = %d\n", timeSav);					//debug
-		printf("signature (new)            = %d\n", signature);							//debug
-		printf("defaultTimeout             = %d\n", defaultTimeout);						//debug
-		#endif
-		return 0;
-	}
-	else if (state == 2){
-		if (signature == 1){
-			defaultTimeout = ( (int) timeRec - timeSav) * 1.5;						// 1.5 to make sure
-		} 
-		else 
-			signature = 1;
-		timeSav = (int) timeRec;
-
-		#ifdef PING_DEBUG
-		printf("\n2-PING event\ntimeSav (re-written)         = %d\n", timeSav);					//debug
-		printf("signature (new)            = %d\n", signature);							//debug
-		printf("defaultTimeout  (new)      = %d\n", defaultTimeout);						//debug
-		#endif
-		return 0;
-	}
-	else if (state == 3) {
-		timeSav = (int) timeRec;
-		defaultTimeout = TIME_TO_DIE;
-		#ifdef PING_DEBUG
-		printf("\n3-redefine of timeout\ntimeSav                    = %d\n", timeSav);				//debug
-		printf("signature                  = %d\n", signature);							//debug
-		printf("defaultTimeout    new      = %d\n", defaultTimeout);						//debug
-		#endif
-		return 0;
-	}
-
-	return 0;							// is it possible?
 }
 
 int main(int argc, char *argv[]) {
@@ -546,27 +583,27 @@ int main(int argc, char *argv[]) {
 	else {
 		dest[strlen(dest)-strlen(strrchr(dest,'/')+1)] = '\0';		// looks for the last "/" at the path etc.
 	}
-
 	// end detection
+	
 	if (argc == 2){
 		if ( strcmp("--help", argv[1]) == 0 ){
-			printf("Avaliable options:\n\n");
-			printf("  -g, --genconf         Create configuration file template. Attention! It will overrite your existing configuration file.\n");
-		//	printf("  -s, --silent          Silent mode. All program messages stores to the 'output.txt' file\n");
-			printf("  -n, --nomessage       Don't print any messages anywhere\n");
-			printf("  -v, --version         Application version\n\n");
-			printf("      --help            Show this message and terminate application\n\n");
-			printf("Configuration stores at the ./bot.conf. Please pay attention: maximum lenght of the file is 10 strings. In case if you don't use password for your nickname set it to 0.\n");
-			printf("Log files stores at the \"./logs\" folder, if in \"bot.conf\" you defined '0' for this setting, otherwise it's stores at \"YOUR_PATH/logs\". Files have next format: YYY-MM-DD.txt\n");
-			printf("Password for the nickname is taken form the configuration file. '0' stands for 'no password'\n");
-			printf("'Link' is the link that returns when someone says \"bot_name something-something\". '0' stands for no link\n");
-			printf("Be smart! Don't use too long nicknames. Usually they used should 30 characters long but may vary from server to server. Don't worry if your nickname shorter, but don't let it be greater then 128 characters.\n");
+			printf("Avaliable options:\n\n"
+				"  -g, --genconf         Create configuration file template. Attention! It will overrite your existing configuration file.\n"
+				"  -s, --silent          Silent mode. All program messages stores to the 'output.txt' file\n"
+				"  -n, --nomessage       Don't print any messages anywhere\n"
+				"  -v, --version         Application version\n\n"
+				"      --help            Show this message and terminate application\n\n"
+				"Configuration stores at the ./bot.conf. Please pay attention: maximum lenght of the file is 10 strings. In case if you don't use password for your nickname set it to 0.\n"
+				"Log files stores at the \"./logs\" folder, if in \"bot.conf\" you defined '0' for this setting, otherwise it's stores at \"YOUR_PATH/logs\". Files have next format: YYY-MM-DD.txt\n"
+				"Password for the nickname is taken form the configuration file. '0' stands for 'no password'\n"
+				"'Link' is the link that returns when someone says \"bot_name something-something\". '0' stands for no link\n"
+				"Be smart! Don't use too long nicknames. Usually they used should 30 characters long but may vary from server to server. Don't worry if your nickname shorter, but don't let it be greater then 128 characters.\n");
 			return 0;
 		}
 		else if( (strcmp("-g", argv[1]) == 0) || (strcmp("--genconf", argv[1]) == 0)) {
-			printf("Attention! This action will remove your bot.conf file\nDo you really want to generate template?\n");
+			printf("Attention! This action will remove your current bot.conf file\nDo you really want to generate template?\n"
+				"y/n: ");
 			do{
-				printf("y/n: ");
 				switch (getchar()){
 					case 'y': case 'Y': 
 						if (make_template(dest) == 0){
@@ -588,49 +625,79 @@ int main(int argc, char *argv[]) {
 				
 				printf("\033[A\033[2K");				// VT100 escape codes
 
-			 } while(1);
+			} while(1);
 			return 0;
 		}
-	/*	else if( (strcmp("-s", argv[1]) == 0) || (strcmp("--silent", argv[1]) == 0)) {
-	 		if ( (freopen ("./output.txt", "w", stdout)) == NULL ){
+		// in future define deamon mode here
+		else if( (strcmp("-s", argv[1]) == 0) || (strcmp("--silent", argv[1]) == 0)) {
+	 		if ( (freopen ("output.txt", "ab", stdout)) == NULL ){
 				printf("Unable to redirect stdout to file\n");
 				return 1;
 			}
-	 		if ( freopen ("./output.txt", "ab", stderr) == NULL ){
+	 		if ( (freopen ("output.txt", "ab", stderr)) == NULL ){
 				printf("Unable to redirect stderr to file\n");
 				return 1;
 			}
-			fclose(stdin);
+			freopen("/dev/null", "rb", stdin);
+
 		}
-	*/
+		// end
 		else if( (strcmp("-n", argv[1]) == 0) || (strcmp("--nomessage", argv[1]) == 0)) {
-			fclose(stdout);
-			fclose(stderr);
-			fclose(stdin);
+			freopen("/dev/null", "rb", stdout);	//doing it using guidelines form man daemon
+			freopen("/dev/null", "rb", stdin);
+			freopen("/dev/null", "rb", stderr);
 		}
 		else if ( (strcmp("-v", argv[1]) == 0) ||  (strcmp("--version", argv[1]) == 0)) {
-			printf("loperLogBot: 1.1 - build %s %s\n", __TIME__, __DATE__);
+			printf("loperLogBot: 1.2 - build %s %s\n", __TIME__, __DATE__);
 			return 0;
 		}
 		else {
-			printf("Incorrect arguments.\nUse --help for information.\n");
+			printf("Incorrect arguments.\n"
+				"Use --help for information.\n");
 			return 0;
 		}
 
 	}
 	else if (argc > 2){
-		printf("Too many arguments.\nUse --help for information.\n");
+		printf("Too many arguments.\n"
+			"Use --help for information.\n");
 		return 0;
 	}
 
 //		-================================================================================================-
 	config = load_config(0, dest);
-
-	if (config.status == 0){
-		printf("SETTINGS\n--------\nstatus          - %d\nserver          - %s\nchannel         - %s\nport            - %d\nnick            - %s\nusername        - %s\nrealname        - %s\npassword        - %s\nmaxNickLength   - %d\nlogPath         - %s\nlink            - %s\nreJoin          - %d\n---------------------------\n", config.status, config.server, config.channel, config.port, config.nick, config.username, config.realname, config.password, config.maxNickLength, config.logPath, config.link, config.reJoin);
+	if (config.status == 0) {
+		printf("\t--------\n"
+			"\tSETTINGS\n"
+			"\t--------\n"
+			"server          - %s\n"
+			"channel         - %s\n"
+			"port            - %d\n"
+			"nick            - %s\n"
+			"username        - %s\n"
+			"realname        - %s\n"
+			"password        - %s\n"
+			"maxNickLength   - %d\n"
+			"logPath         - %s\n"
+			"link            - %s\n"
+			"reJoin          - %s\n"
+			"\t--------\n", 
+			config.server, 
+			config.channel, 
+			config.port, 
+			config.nick, 
+			config.username, 
+			config.realname, 
+			config.password, 
+			config.maxNickLength, 
+			config.logPath, 
+			config.link, 
+			config.reJoin == 0?"No":"Yes");
 	
 		if ( set_log_dir(config.logPath) != 0){				// set logs directory
-			printf ("Unable to create directory for log files (%s)\nPlease make sure that you have premissions to write in this directory\n", config.logPath);
+			printf ("Unable to create directory for log files (%s)\n"
+				"Please make sure that you have premissions to write in this directory\n", 
+				config.logPath);
 			return 1;
 		}
 		else {
@@ -646,7 +713,8 @@ int main(int argc, char *argv[]) {
 			
 			callbacks.event_ctcp_req = event_ctcp_req;
 			callbacks.event_notice = event_notice;
-			callbacks.event_unknown = event_unknown;	// this event will be triggered when app recieve PING request from server. And any other unknown event, and this is buggy moment, and should be fixed. 
+			callbacks.event_ctcp_rep = event_ctcp_rep;	// &  dump_event? Now no need to dump.	This event is triggered upon receipt of an CTCP response. Thus if you generate the CTCP message and the remote user responded, this event handler will be called.
+//			callbacks.event_unknown = event_unknown;	// this event will be triggered when app recieve PING request from server. And any other unknown event, and this is buggy moment, and should be fixed. 
         		
 			callbacks.event_channel = dump_event;
 			callbacks.event_nick = dump_event;
@@ -657,16 +725,17 @@ int main(int argc, char *argv[]) {
 			callbacks.event_kick = dump_event;
 			callbacks.event_invite = dump_event;
 			callbacks.event_umode = dump_event;
-			callbacks.event_ctcp_rep = dump_event;
 			callbacks.event_ctcp_action = dump_event;	// "ACTION" handler
         		
         		
 			// Now create the session
 			while (1) {
+				printTimeStamp();
 				printf("Connecting...\n");
 				session = irc_create_session( &callbacks );
 				
 	        		if ( !session ){
+					printTimeStamp();
 					printf("Unable to create session\n");
 					// return 1; 							// give a try once again
 				}
@@ -675,12 +744,15 @@ int main(int argc, char *argv[]) {
 				
 	        			// Connect to a regular IRC server
 					if ( irc_connect (session, config.server, config.port, 0, config.nick, config.username, config.realname ) ){
+						printTimeStamp();
 						printf ("Could not connect: %s\n", irc_strerror (irc_errno(session)));
 						// return 1;						//give a try once again
+						// TODO add a counter for few reply and die / do something with this
 		                	}
 					else {	
-						is_alive(3, time(NULL));				// this time really 'initial' timestamp written into the watchdog function
-						
+
+						is_alive(1, time(NULL), session);	//initialize is_alive internal start time
+						printTimeStamp();
 						printf("Connection established\n");
 		
 						///////////////////// irc_run() replacement  ///////////////////
@@ -694,95 +766,48 @@ int main(int argc, char *argv[]) {
 							FD_ZERO (&out_set);
 		        
 							// +1 chk
-							if ( is_alive(0, time(NULL)) != 0 ){
-								printf("\n------------\nPING timeout\n------------\n");
-								break; // 1
+							if ( is_alive(0, time(NULL), session) != 0 ){
+								printf("\n\t-----------------------------------\n\t");
+								printTimeStamp();
+								printf("PING timeout\n"
+									"\t-----------------------------------\n");
+                                                                 break; // 1
 							}
 							// end +1 chk
+
 							
 							irc_add_select_descriptors (session, &in_set, &out_set, &maxfd);
 		
 							if ( select (maxfd + 1, &in_set, &out_set, 0, &tv) < 0 )
 							{
+								printTimeStamp();
 								printf ("Could not connect or I/O error: LIBIRC_ERR_TERMINATED\n");
 								break; // 1
 							}
 					
 							if ( irc_process_select_descriptors (session, &in_set, &out_set) ){
+								printTimeStamp();
 								printf ("Could not connect or I/O error\n" );
 								break;	// 1
 							}
 		
 						}
 						irc_disconnect(session);
+						printTimeStamp();
 						printf("Disconnected after successful connection\n");
 						//return 0;
 						////////////////////////////////////////////////////////////////////////////
 					}
 				}
-				printf ("Not connected: reconnection will be performed in 5 sec\n");
+				printTimeStamp();
+				printf ("Not connected: will retry in 5 sec\n");
 				sleep (5);
 			} // while end
 		}
-		
+		return 0; // never happens
 	}
-
-	else if (config.status == -2){
-		printf ("Unable to open config file\n");
-		return 1;
-		}
-	else if (config.status == -1){
-		printf("Configuration file issue: value or attribute missed or redundant\n");
-		return 1;
-		}
-	else if (config.status == -255){						// special
-		printf("Configuration file issue: 'logPath' is not defined as absolute path\n");
-		return 1;
-		}
-	else if (config.status == 255){						// it's like config.status == 0b1000000 and so on
-		printf("Configuration file issue: probably 'logPath' missed\n");
-		return 1;
-		}
-	else if (config.status == 126){						
-		printf("Configuration file issue: probably 'server' missed\n");
-		return 1;
-		}
-	else if (config.status == 125){
-		printf("Configuration file issue: probably 'channel' missed\n");
-		return 1;
-		}
-	else if (config.status == 123){
-		printf("Configuration file issue: probably 'port' missed\n");
-		return 1;
-		}
-	else if (config.status == 119){
-		printf("Configuration file issue: probably 'nick' missed\n");
-		return 1;
-		}
-	else if (config.status == 111){
-		printf("Configuration file issue: probably 'username' missed\n");
-		return 1;
-		}
-	else if (config.status == 95){
-		printf("Configuration file issue: probably 'realname' missed\n");
-		return 1;
-		}
-	else if (config.status == 63){
-		printf("Configuration file issue: probably 'password' missed\n");
-		return 1;
-		}
-	else if (config.status == 511){						
-		printf("Configuration file issue: probably 'link' missed\n");
-		return 1;
-		}
-	else if (config.status == 1023){						
-		printf("Configuration file issue: probably 'reJoin' missed\n");
-		return 1;
-		}
-	else {
-		printf("Configuration file issue: few attributes missed (%d)\n", config.status);
-		return 1;
-		}
+	else 
+		reportSettingsIssues(config.status);
 
 	return 0;
 }

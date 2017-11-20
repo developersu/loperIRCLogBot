@@ -26,10 +26,10 @@ Where is the executable? Where should I look for this and how to start?
 $ ./bin/loperIRCLogBot
 
 What about license?
-Source code, which is actually 'loperIRCLogBot.c' file spreads under the GNU General Public License v.3 license. You can find it in LICENSE file or just visit www.gnu.org (it should be there for sure). It also uses (a little bit) modified libircclient writted by George Yunaev. Libircclient is licensed under Lesser General Public License version 3 or higher. 
+Source code, which is actually 'loperIRCLogBot.c' file spreads under the GNU General Public License v.3 license. You can find it in LICENSE file or just visit www.gnu.org (it should be there for sure). It also uses  libircclient writted by George Yunaev. Libircclient is licensed under Lesser General Public License version 3 or higher. 
 
 Is it possible to let this app work with shared libraries of the libircclient that I already have in my distro?
-Nope. The little modification needed for loperIRCLogBot doesn't let you utilize original non-changed library. Take a look on a patch stored at ./files folder (that's the reason).
+Yes! Will update Makefile sooner or later.
 
 Where is the application configuration should be set? How?
 At the ./bin/bot.conf file. You could generate template by passing -g option: './loperIRCLogBot -g'. It should stored in same folder with executable file. No other option for this for now.
@@ -71,4 +71,4 @@ Any chance to log more than one channel?
 Nope.
 
 If connection is lost, could this bot re-connect? When he will do it?
-In 20 minutes. Maybe earlier. Depends on activity at the channel and pings from the server. It's implemented not the best way at the moment.
+In ~6 minutes. Maybe earlier. 
