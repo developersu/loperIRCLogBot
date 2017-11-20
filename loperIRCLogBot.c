@@ -630,11 +630,11 @@ int main(int argc, char *argv[]) {
 		}
 		// in future define deamon mode here
 		else if( (strcmp("-s", argv[1]) == 0) || (strcmp("--silent", argv[1]) == 0)) {
-	 		if ( (freopen ("output.txt", "ab", stdout)) == NULL ){
+	 		if ( (freopen ("output.txt", "ab", stdout)) == NULL ){		// todo - add validation for errno
 				printf("Unable to redirect stdout to file\n");
 				return 1;
 			}
-	 		if ( (freopen ("output.txt", "ab", stderr)) == NULL ){
+	 		if ( (freopen ("output.txt", "ab", stderr)) == NULL ){		// todo - add validation for errno
 				printf("Unable to redirect stderr to file\n");
 				return 1;
 			}
@@ -663,7 +663,6 @@ int main(int argc, char *argv[]) {
 			"Use --help for information.\n");
 		return 0;
 	}
-
 //		-================================================================================================-
 	config = load_config(0, dest);
 	if (config.status == 0) {
