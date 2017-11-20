@@ -16,6 +16,8 @@
 // only to get PATH_MAX
 #include <limits.h>
 
+#include <errno.h>
+
 //define period before sending PING to server (5 min - 300).
 #define TIME_TO_PING	300
 
@@ -124,7 +126,7 @@ configuration load_config(int run, char * nick_or_path) {
 		}
 
 
-		for (i=0;i<15;i++){
+		for (i=0;i<15;i++){					// add Switch-case
 			if ( strstr(sta[i][0], "server") != NULL )
 				checksum |= 1<<0;
 			else if ( strstr(sta[i][0], "channel") != NULL )
@@ -630,16 +632,16 @@ int main(int argc, char *argv[]) {
 		}
 		// in future define deamon mode here
 		else if( (strcmp("-s", argv[1]) == 0) || (strcmp("--silent", argv[1]) == 0)) {
-	 		if ( (freopen ("output.txt", "ab", stdout)) == NULL ){		// todo - add validation for errno
-				printf("Unable to redirect stdout to file\n");
+	 		if ( (freopen ("output.txt", "a", stdout)) == NULL ){		// todo - add validation for errno?
 				return 1;
 			}
-	 		if ( (freopen ("output.txt", "ab", stderr)) == NULL ){		// todo - add validation for errno
-				printf("Unable to redirect stderr to file\n");
-				return 1;
-			}
-			freopen("/dev/null", "rb", stdin);
+			setlinebuf(stdout);						// line buffer
 
+	 		if ( (freopen ("output.txt", "a", stderr)) == NULL ){		// todo - add validation for errno?
+				return 1;
+			}
+			setvbuf(stderr, NULL, _IONBF, 0);				// no buffering for srderr
+			freopen("/dev/null", "rb", stdin);
 		}
 		// end
 		else if( (strcmp("-n", argv[1]) == 0) || (strcmp("--nomessage", argv[1]) == 0)) {
