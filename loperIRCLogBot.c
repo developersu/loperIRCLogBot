@@ -1,7 +1,7 @@
 /***********************************************************************************
  * Author: Dmitry Isaenko                                                          *
  * License: GNU GPL v.3                                                            *
- * Version: 1.2                                                                    *
+ * Version: 1.2.2                                                                  *
  * Site: https://developersu.blogspot.com/                                         *
  * 2017, Russia                                                                    *
  ***********************************************************************************/
@@ -15,14 +15,17 @@
 #include <time.h>
 // only to get PATH_MAX
 #include <limits.h>
-
-#include <errno.h>
+// for using setsid
+#include <unistd.h>
 
 //define period before sending PING to server (5 min - 300).
 #define TIME_TO_PING	300
 
 // set if you want to turn mode +x on while connecting
 #define X_MODE
+
+// Current version of the program
+#define __CUR_VER__ "1.2.2"
 
 #define NPING_DEBUG
 #define NDEBUG
@@ -126,7 +129,7 @@ configuration load_config(int run, char * nick_or_path) {
 		}
 
 
-		for (i=0;i<15;i++){					// add Switch-case
+		for (i=0;i<15;i++){	
 			if ( strstr(sta[i][0], "server") != NULL )
 				checksum |= 1<<0;
 			else if ( strstr(sta[i][0], "channel") != NULL )
@@ -237,8 +240,6 @@ configuration load_config(int run, char * nick_or_path) {
 		strcpy(C.nick, nick_or_path);
 		return C;
 	}
-		
-	
 }
 
 int set_log_dir(char * logdir){
@@ -420,11 +421,11 @@ void event_ctcp_req(irc_session_t * session, const char * event, const char * or
 
 	if( strcmp (params[0], "VERSION") == 0 ){
 		dump_event (session, event, origin, params, count);
-		irc_cmd_ctcp_reply(session, origin, "VERSION loperIRCLogBot v.1.2");
+		irc_cmd_ctcp_reply(session, origin, "VERSION loperIRCLogBot v."__CUR_VER__);
 	}
 	else if( strcmp (params[0], "SOURCE") == 0 ){
 		dump_event (session, event, origin, params, count);
-		irc_cmd_ctcp_reply(session, origin, "SOURCE loperIRCLogBot v.1.2");
+		irc_cmd_ctcp_reply(session, origin, "SOURCE loperIRCLogBot v."__CUR_VER__);
 	}
 	else if( strcmp (params[0], "TIME") == 0 ){
 		dump_event (session, event, origin, params, count);
@@ -436,7 +437,7 @@ void event_ctcp_req(irc_session_t * session, const char * event, const char * or
 	}
 	else if( strcmp (params[0], "CLIENTINFO") == 0 ){
 		dump_event (session, event, origin, params, count);
-		irc_cmd_ctcp_reply(session, origin, "CLIENTINFO loperIRCLogBot v.1.2 - Supported tags: VERSION, SOURCE, TIME, PING, CLIENTINFO");
+		irc_cmd_ctcp_reply(session, origin, "CLIENTINFO loperIRCLogBot v."__CUR_VER__" - Supported tags: VERSION, SOURCE, TIME, PING, CLIENTINFO");
 	}
 }
 
@@ -507,11 +508,11 @@ static void event_notice (irc_session_t * session, const char * event, const cha
 
 }
 
-int make_template(char * dest){
+int make_template(char * folder){
 	FILE * templ;
-	strcat (dest, "bot.conf");
+	strcat (folder, "bot.conf");
 
-	if ( (templ = fopen(dest,"w")) != NULL) {
+	if ( (templ = fopen(folder,"w")) != NULL) {
 		fprintf(templ, "server:        \n");
 		fprintf(templ, "channel:       \n");
 		fprintf(templ, "port:          \n");
@@ -524,10 +525,13 @@ int make_template(char * dest){
 		fprintf(templ, "link:          0\n");
 		fprintf(templ, "reJoin:        yes\n");
 		fclose(templ);
+		printf("Configuratation template created.\n");
 		return 0;
 	}
-	else 
+	else {
+		printf("Unable to create configuration template file\nCheck folder permissions\n");
 		return 1;
+	}
 }
 
 
@@ -574,10 +578,11 @@ int main(int argc, char *argv[]) {
 	fd_set in_set, out_set;
 	int maxfd = 0;
 	        
-	// Let's find out the path to executable file!
+	// Let's find out the path to executable file! It's needed, because when we create config file like ../executable -g 
+	// it creates it on the same folder where user located at, not at the folder where the executable is.
+	// Same for logs.
 	char dest[PATH_MAX];
 	struct stat info;
-
 	if (readlink("/proc/self/exe", dest, PATH_MAX) == -1){
 		printf("Unable to get the path to this executable\n");
 		return 1;
@@ -586,10 +591,10 @@ int main(int argc, char *argv[]) {
 		dest[strlen(dest)-strlen(strrchr(dest,'/')+1)] = '\0';		// looks for the last "/" at the path etc.
 	}
 	// end detection
-	
 	if (argc == 2){
 		if ( strcmp("--help", argv[1]) == 0 ){
 			printf("Avaliable options:\n\n"
+				"  -d, --daemon          Start application as daemon (experimental)\n"
 				"  -g, --genconf         Create configuration file template. Attention! It will overrite your existing configuration file.\n"
 				"  -s, --silent          Silent mode. All program messages stores to the 'output.txt' file\n"
 				"  -n, --nomessage       Don't print any messages anywhere\n"
@@ -602,20 +607,37 @@ int main(int argc, char *argv[]) {
 				"Be smart! Don't use too long nicknames. Usually they used should 30 characters long but may vary from server to server. Don't worry if your nickname shorter, but don't let it be greater then 128 characters.\n");
 			return 0;
 		}
+		// deamon mode here
+		else if( (strcmp("-d", argv[1]) == 0) || (strcmp("--daemon", argv[1]) == 0)) {
+			pid_t pid, sid;
+			// fork
+			pid = fork();
+			if (pid < 0) 
+			// TODO implement notices to syslog to track failure
+				exit(EXIT_FAILURE);				// report to log
+			// Exit parent process. pid of is not 0, then it's parent. pid = 0 then it's child.
+			if (pid > 0) 
+				exit(EXIT_SUCCESS);				// report to log
+			// set umask for using filesystem as we want
+			umask(0);
+			// create sid
+			sid = setsid();
+			if (sid < 0)
+				exit(EXIT_FAILURE);				// report to log
+			// change working directory of the process to /
+			if (chdir("/") < 0) 
+				exit(EXIT_FAILURE);				// it's safe to replace to 'return' statement
+
+			freopen("/dev/null", "rb", stdout);	//doing it using guidelines form man daemon
+			freopen("/dev/null", "rb", stdin);
+			freopen("/dev/null", "rb", stderr);
+		}
 		else if( (strcmp("-g", argv[1]) == 0) || (strcmp("--genconf", argv[1]) == 0)) {
-			printf("Attention! This action will remove your current bot.conf file\nDo you really want to generate template?\n"
-				"y/n: ");
+			printf("Attention! This action will remove your current bot.conf file\nDo you really want to generate template? (Y/N):\n");
 			do{
 				switch (getchar()){
 					case 'y': case 'Y': 
-						if (make_template(dest) == 0){
-							printf("Configuratation template created.\n");
-							return 0;
-						}
-						else {
-							printf("Unable to create configuration template file\nCheck folder permissions\n");
-							return 1;
-						}
+						return make_template(dest);
 					case 'n': case 'N': 
 						printf("No changes applied\n");                   
 						return 0;
@@ -630,9 +652,9 @@ int main(int argc, char *argv[]) {
 			} while(1);
 			return 0;
 		}
-		// in future define deamon mode here
 		else if( (strcmp("-s", argv[1]) == 0) || (strcmp("--silent", argv[1]) == 0)) {
-	 		if ( (freopen ("output.txt", "a", stdout)) == NULL ){		// todo - add validation for errno?
+			// close stdin, redirect stdout & stderr
+	 		if ( (freopen ("output.txt", "a", stdout)) == NULL ){		// todo - add validation for errno? Write to syslog?
 				return 1;
 			}
 			setlinebuf(stdout);						// line buffer
@@ -643,14 +665,13 @@ int main(int argc, char *argv[]) {
 			setvbuf(stderr, NULL, _IONBF, 0);				// no buffering for srderr
 			freopen("/dev/null", "rb", stdin);
 		}
-		// end
 		else if( (strcmp("-n", argv[1]) == 0) || (strcmp("--nomessage", argv[1]) == 0)) {
 			freopen("/dev/null", "rb", stdout);	//doing it using guidelines form man daemon
 			freopen("/dev/null", "rb", stdin);
 			freopen("/dev/null", "rb", stderr);
 		}
 		else if ( (strcmp("-v", argv[1]) == 0) ||  (strcmp("--version", argv[1]) == 0)) {
-			printf("loperLogBot: 1.2 - build %s %s\n", __TIME__, __DATE__);
+			printf("loperIRCLogBot: "__CUR_VER__" - build %s %s\n", __TIME__, __DATE__);
 			return 0;
 		}
 		else {
