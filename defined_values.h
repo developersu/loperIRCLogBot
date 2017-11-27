@@ -6,7 +6,7 @@
 #define X_MODE
 
 // Current version of the program
-#define __CUR_VER__ "1.3"
+#define __CUR_VER__ "1.3.1"
 
 #define NPING_DEBUG
 #define NDEBUG

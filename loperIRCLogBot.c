@@ -1,7 +1,7 @@
 /***********************************************************************************
  * Author: Dmitry Isaenko                                                          *
  * License: GNU GPL v.3                                                            *
- * Version: 1.3                                                                    *
+ * Version: 1.3.1                                                                  *
  * Site: https://developersu.blogspot.com/                                         *
  * 2017, Russia                                                                    *
  ***********************************************************************************/
@@ -16,6 +16,7 @@
 #include <limits.h>	// only to get PATH_MAX
 #include <unistd.h>	// for using setsid
 #include <syslog.h>	// Use syslog
+#include <signal.h>	// Use signals
 
 #include "defined_values.h"
 
@@ -413,6 +414,7 @@ void dump_event (irc_session_t * session, const char * event, const char * origi
 	}
 	else {
 		printf("Unable to open/create log file: check folder permissions\n");			// and die, but it doesn't die.. well. Ok for now.
+		exit(EXIT_FAILURE);									// TODO: QA: integration testing needed
 	}
 
 	#if defined (DEBUG)	
