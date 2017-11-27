@@ -32,7 +32,7 @@ Is it possible to let this app work with shared libraries of the libircclient th
 Yes! Will update Makefile sooner or later.
 
 Where is the application configuration should be set? How?
-At the ./bin/bot.conf file. You could generate template by passing -g option: './loperIRCLogBot -g'. It should stored in same folder with executable file. No other option for this for now.
+At the /etc/loperIRCLogBot/bot.conf OR ./bin/bot.conf file. You could generate template by passing -g option: './loperIRCLogBot -g'. 
 Configuration file contains 15 lines, so make sure that you didn't define any sensetive information below these 15 lines.
 Here is an example:
 server:          irc.example.com
@@ -46,6 +46,7 @@ maxNickLength:   30
 logPath:         0 
 link:            http://localhost:8080/logs/
 reJoin:          yes
+floodTimeOut:    10
  
 'server' should be set as described. NO "irc://" or stuff like this allowed, no slashes and backslashes.
 'channel' is the channel to log. Should be started by '#' symbol
@@ -56,16 +57,17 @@ reJoin:          yes
 'password' is a password for the nick. It goes to server as '/nickserv IDENTIFY [password]'. If '0' then no password needed,
 'maxNickLength' is a maximum length of the nick. Various servers restrict the length of the nick. '30' should be enough. '128' is maximum, but I'm not sure that you have to set '128' in here, because if server doesn't support nicknames with such lenght, you could face to unforseen behavior in the application.
 'logPath' is a path to 'logs' directory, where all your logs will be stored. If '0' then they will be stored at executable file folder. Pay attention, that logPath should be defined as full path. Not like ~/logs of ../../logs.
-'link' is a link, that will be provided to anyone on the channel, who starts his/her message by your nick. If '0' then no link will be shown.
+'link' is a link, that will be provided to anyone on the channel, who starts his/her message by your nick. If '0' then smile will be shown.
 'reJoin'. If set to 'yes', then bot will be re-connect to channel after kick. If 'no' then it won't.
+'floodTimeOut' is a time in seconds before answering on request sent to us. 
 
 Is there any other options for this application?
 Yes. When you start application, you could pass next options:
-  -g, --genconf         Create configuration file template. Attention! It will overrite your existing configuration file.
-  -n, --nomessage       Don't print any messages anywhere
-  -v, --version         Application version
-      --help            Help message
-Pay attention, that '-n' is just for turning-off messages, there is no stuff like daemon-mode inside. Yet.
+   -d, --daemon          Start application as daemon (experimental)
+   -g, --genconf         Create configuration file template. Attention! It will overrite your existing configuration file.
+   -s, --silent          Silent mode. All program messages stores to the 'output.txt' file
+   -v, --version         Application version
+       --help            Show this message and terminate application
 
 Any chance to log more than one channel?
 Nope.
