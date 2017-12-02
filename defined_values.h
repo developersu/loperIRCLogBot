@@ -5,8 +5,10 @@
 // Set if you want to turn mode +x on while connecting
 #define X_MODE
 
+// Set path to loperIRCLogBot.pid file for daemon mode
+#define DEF_PID_FILE	"/var/run/loperIRCLogBot.pid"	// re-define in configuration file
 // Current version of the program
-#define __CUR_VER__ "1.3.1"
+#define __CUR_VER__ "1.4"
 
 #define NPING_DEBUG
 #define NDEBUG
@@ -21,7 +23,7 @@
 
 #define DEF_HELP_MSG \
 "Avaliable options:\n\n \
-  -d, --daemon          Start application as daemon (experimental)\n \
+  -d, --daemon          Start application as daemon. Writes to /var/log/loperIRCLogBot.log and syslog. Stores PID number at /var/run/loperIRCLogBot.pid\n \
   -g, --genconf         Create configuration file template. Attention! It will overrite your existing configuration file.\n \
   -s, --silent          Silent mode. All program messages stores to the 'output.txt' file\n \
   -v, --version         Application version\n\n \

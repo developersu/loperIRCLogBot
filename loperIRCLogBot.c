@@ -1,7 +1,7 @@
 /***********************************************************************************
  * Author: Dmitry Isaenko                                                          *
  * License: GNU GPL v.3                                                            *
- * Version: 1.3.1                                                                  *
+ * Version: 1.4                                                                    *
  * Site: https://developersu.blogspot.com/                                         *
  * 2017, Russia                                                                    *
  ***********************************************************************************/
@@ -14,17 +14,17 @@
 #include <sys/types.h>
 #include <time.h>
 #include <limits.h>	// only to get PATH_MAX
-#include <unistd.h>	// for using setsid
+#include <unistd.h>	// for using setsid. 
 #include <syslog.h>	// Use syslog
 #include <signal.h>	// Use signals
+#include <sys/select.h>	// Use pselect
 
 #include "defined_values.h"
+#include "daemon.c"
 
 
-// TODO after implementing signals set closelog();
-// TODO normal deamon-mode functionality
+// TODO after implementing signals set closelog(); +++ use unlink(PID_FILE) to remove PID stored at /var/run/loperIRCLogBot.pid. Make logrotation by SIGHUP. 12.5
 // TODO make it multi-channel
-// TODO-feachure make an ability to define log path for the bot.conf? Or move it to /etc/
 
 typedef struct conf_sruct {
         int status;
@@ -345,8 +345,8 @@ void event_connect (irc_session_t * session, const char * event, const char * or
 }
 
 void dump_event (irc_session_t * session, const char * event, const char * origin, const char ** params, unsigned int count)
-{
-#ifdef DEBUG
+{									// TODO: Re-write. Actually, this implementation is also pice of shit
+#ifdef DEBUG								// It cause too many system calls even we don't need them
 	char buf[512];
 	int cnt;
 
@@ -393,7 +393,7 @@ void dump_event (irc_session_t * session, const char * event, const char * origi
 		!(strcmp(event,"MODE"))    ? strcmp(nickBuf, hostBuf) == 0 ? 0: fprintf(fp,"%s -!- %s [%s] set %s %s\n",nowTime, nickBuf, hostBuf, params[1], params[2] ? params[2]:""): 
 		!(strcmp(event,"PART"))    ? fprintf(fp,"%s <<  %s [%s] parted: %s \n",nowTime, nickBuf, hostBuf, params[1]): 
 		!(strcmp(event,"TOPIC"))   ? fprintf(fp,"%s -!- %s [%s] has changed topic to: %s \n",nowTime, nickBuf, hostBuf, params[1]): 
-		!(strcmp(event,"QUIT"))    ? fprintf(fp,"%s << %s [%s] quit: %s \n",nowTime, nickBuf, hostBuf, params[0]): 
+		!(strcmp(event,"QUIT"))    ? fprintf(fp,"%s <<  %s [%s] quit: %s \n",nowTime, nickBuf, hostBuf, params[0]): 
 		!(strcmp(event,"NICK"))    ? fprintf(fp,"%s -!- %s [%s] changed nick to: %s \n",nowTime, nickBuf, hostBuf, params[0]): 0;
 
 		if (!strcmp(event,"KICK")){
@@ -608,16 +608,6 @@ void reportSettingsIssues(int sum){
 					printf("\t'%s'\n", setLst[i]);
 	}
 }
-// not implemented & not used signal handler
-void signalHandler (int sig){
-	if (sig == SIGHUP){
-		syslog(LOG_NOTICE, "loperIRCLogBot got SIGHUP");
-		// close all opened files here
-		exit(EXIT_SUCCESS);
-		
-	}
-		
-}
 
 void silentMode(){
 	// close stdin, redirect stdout & stderr
@@ -630,65 +620,27 @@ void silentMode(){
 	if ( freopen("/dev/null", "rb", stdin) == NULL )
 		exit(EXIT_FAILURE);
 }
-void daemonMode(){
-	setlogmask (LOG_UPTO (LOG_ERR));
-	openlog("loperIRCLogBot", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_DAEMON);
-
-	pid_t pid;
-
-	// PERFORM FIRST FORK
-	pid = fork();
-	if (pid < 0) { 	
-		syslog(LOG_ERR, "Failed to make first fork");
-		exit(EXIT_FAILURE);				// report to log
-	}
-	if (pid > 0) 						// Exit parent process. pid of is not 0, then it's parent. pid = 0 then it's child.
-		exit(EXIT_SUCCESS);				// report to log?
-	if (chdir("/") < 0) {					// change working directory of the process to /
-		syslog(LOG_ERR, "Failed to change process dir to /");
-		exit(EXIT_FAILURE);				// it's safe to replace to 'return' statement
-	}
-	umask(0);						// set umask for using filesystem as we want
-	if (setsid() < 0) {					// set SID
-		syslog(LOG_ERR, "Failed to set SID");
-		exit(EXIT_FAILURE);				// report to log
-	}
-	// PERFORM SECOND FORK
-	pid = fork();
-	if (pid < 0){
-		syslog(LOG_ERR, "Failed to make second fork");
-		exit(EXIT_FAILURE);				// report to log
-	}
-	if (pid > 0)
-		exit(EXIT_SUCCESS);				// report to log?
-	//doing it using guidelines form man daemon
-	if (freopen("/dev/null", "rb", stdin) == NULL ){
-		syslog(LOG_ERR, "Failed to close 'stdin'");	
-		exit(EXIT_FAILURE);				
-	}
-	if (freopen("/var/log/loperIRCLogBot.log", "a", stdout) == NULL ){
-		syslog(LOG_ERR, "Failed to redirect 'stdout' to /var/log/loperIRCLogBot.log");	
-		exit(EXIT_FAILURE);				
-	}
-	setlinebuf(stdout);						// line buffer
-	if (freopen("/var/log/loperIRCLogBot.log", "a", stderr) == NULL ){
-		syslog(LOG_ERR, "Failed to redirect 'stderr' to /var/log/loperIRCLogBot.log");	
-		exit(EXIT_FAILURE);				
-	}
-	setvbuf(stderr, NULL, _IONBF, 0);				// no buffering for srderr
-
-	syslog(LOG_NOTICE, "loperIRCLogBot successfuly started");
-}
 
 int main(int argc, char *argv[]) {
 	configuration config;
 	
 	irc_callbacks_t callbacks;	// The IRC callbacks structure
 	irc_session_t * session;
-	struct timeval tv;
+	struct timespec ts;		// time structure for pselect();
 	fd_set in_set, out_set;
 	int maxfd = 0;
-	        
+	 
+	// ### daemon mode tails.
+	// Define signals that we will block while using pselect(); See below. pselect set mask provided, then change it to default
+	sigset_t blockedSignals;	// block all signals; to use in pselect()
+	sigset_t normalSignals;		// define default mask
+	sigfillset(&blockedSignals);
+	sigdelset(&blockedSignals, SIGINT);
+	
+	sigfillset(&normalSignals);				// Not sure that it could make impact on anything
+	sigprocmask(SIG_UNBLOCK, &normalSignals, NULL);
+	// ###
+
 	// Let's find out the path to executable file! It's needed, because when we create config file like ../executable -g 
 	// it creates it on the same folder where user located at, not at the folder where the executable is.
 	// Same for logs.
@@ -826,8 +778,13 @@ int main(int argc, char *argv[]) {
 						///////////////////// irc_run() replacement  ///////////////////
 						while ( irc_is_connected(session) )
 						{
-							tv.tv_usec = 250000;
-							tv.tv_sec = 0;
+							if (reloadLogSig == 1)		//debugFunction
+								logsReopen();
+							if (terminateSig == 1)		//debugFunction
+								killBySignalRecieved(session);
+
+							ts.tv_sec = 0;
+							ts.tv_nsec = 250000000;
 		        
 							// Init sets
 							FD_ZERO (&in_set);
@@ -845,8 +802,8 @@ int main(int argc, char *argv[]) {
 
 							
 							irc_add_select_descriptors (session, &in_set, &out_set, &maxfd);
-		
-							if ( select (maxfd + 1, &in_set, &out_set, 0, &tv) < 0 )
+							// Set mask to all signals, while neccessary for us are: SIGHUP, SIGTERM. Exclude SIGINT, 'cause no matter how this app fucks up in case of _exit(2).
+							if ( pselect (maxfd + 1, &in_set, &out_set, 0, &ts, &blockedSignals) < 0 )		// and errno == EINTR !
 							{
 								printf ("%s Could not connect or I/O error: LIBIRC_ERR_TERMINATED\n", printTimeStamp());
 								break; // 1
