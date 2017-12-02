@@ -23,7 +23,6 @@
 #include "daemon.c"
 
 
-// TODO after implementing signals set closelog(); +++ use unlink(PID_FILE) to remove PID stored at /var/run/loperIRCLogBot.pid. Make logrotation by SIGHUP. 12.5
 // TODO make it multi-channel
 
 typedef struct conf_sruct {
