@@ -1,0 +1,18 @@
+[Unit]
+Description=IRC log bot
+After=syslog.target network.target
+
+[Service]
+Type=forking
+PIDFile=/var/run/loperIRCLogBot.pid
+OOMScoreAdjust=-100
+TimeoutSec=300
+Restart=always
+
+ExecStart=/usr/bin/loperIRCLogBot -d
+ExecReload=/bin/kill -TERM $PIDFile && /usr/bin/loperIRCLogBot -d
+ExecStop=/bin/kill -TERM $PIDFile
+
+[Install]
+WantedBy=multi-user.target
+
