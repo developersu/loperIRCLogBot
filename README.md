@@ -16,7 +16,7 @@ Key feachures and limitations:
 * Dumb flood-control
 * Authorization only as: /nickserv IDENTIFY [password] 
 
-# License
+## License
 
 Source code spreads under the GNU General Public License v.3. You can find it in LICENSE file or just visit www.gnu.org (it should be there for sure). 
 It also uses  libircclient writted by George Yunaev, that is stored at ./src/libircclient-1.9. Libircclient is licensed under Lesser General Public License version 3 or higher. 
@@ -27,7 +27,7 @@ It also uses  libircclient writted by George Yunaev, that is stored at ./src/lib
 $ make
 # sudo make install
 ```
-# Uninstall
+## Uninstall
 ```
 make uninstall
 ```
