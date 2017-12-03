@@ -25,11 +25,11 @@ It also uses  libircclient writted by George Yunaev, that is stored at ./src/lib
 
 ```
 $ make
-# sudo make install
+$ sudo make install
 ```
 ## Uninstall
 ```
-make uninstall
+$ sudo make uninstall
 ```
 
 NOTES: 
