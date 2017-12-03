@@ -74,8 +74,8 @@ Let's go deeper:
 ## Options & work modes
 
 When you start application, you could pass next options:
- -d, --daemon          Start application as daemon. Writes to /var/log/loperIRCLogBot.log and syslog. Stores PID number at /var/run/loperIRCLogBot.pid. Also can interrupt correctly on SIGTERM, not so smooth on SIGINT and reopen log file directory on SIGHUP (used to handle logrotation).
- -g, --genconf         Create configuration file template. Attention! It will overrite your existing configuration file.
- -s, --silent          Silent mode. All program messages stores to the 'output.txt' file
- -v, --version         Application version
- --help            Show this message and terminate application
+* -d, --daemon          Start application as daemon. Writes to /var/log/loperIRCLogBot.log and syslog. Stores PID number at /var/run/loperIRCLogBot.pid. Also can interrupt correctly on SIGTERM, not so smooth on SIGINT and reopen log file directory on SIGHUP (used to handle logrotation).
+* -g, --genconf         Create configuration file template. Attention! It will overrite your existing configuration file.
+* -s, --silent          Silent mode. All program messages stores to the 'output.txt' file
+* -v, --version         Application version
+* --help            Show this message and terminate application
