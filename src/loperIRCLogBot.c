@@ -1,15 +1,15 @@
 /***********************************************************************************
  * Author: Dmitry Isaenko                                                          *
  * License: GNU GPL v.3                                                            *
- * Version: 1.4                                                                    *
+ * Version: 1.5                                                                    *
  * Site: https://developersu.blogspot.com/                                         *
  * 2017, Russia                                                                    *
  ***********************************************************************************/
 
 #include "libircclient/libircclient.h"
 #include "libircclient/libirc_rfcnumeric.h"
-#include "stdio.h"
-#include "string.h"
+#include <stdio.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
@@ -21,229 +21,9 @@
 
 #include "defined_values.h"
 #include "daemon.c"
-
+#include "config.c"	// see load_config and typedef of configuration structure in here
 
 // TODO make it multi-channel
-
-typedef struct conf_sruct {
-        int status;
-        char server[2048];
-        char channel[2048];
-        int port;
-        char nick[2048];
-        char username[2048];
-        char realname[2048];
-        char password[2048];
-	int maxNickLength;
-	char logPath[PATH_MAX];				
-	char link[2048];				// should be enough to store link
-	int reJoin;					// 1 - yes, 0 - no
-	int floodTimeOut;					
-} configuration;
-
-
-configuration load_config(int run, char * nick_or_path) {	
-/*
- * if run = 0 we load config from the file
- * if run = 1 we return configuration structure stored in this function
- * if run = 2 we overrite 'nick' at the configuration structure
- */
-	int i;
-
-	FILE * conf;
-	
-	static char fileArray[15][2048];	// user setup stored here and avaliable by any call after initial (by passing 0 to function)
-	char * st;
-	char sta[15][2][2048];			// should be 3D
-	static configuration C;			//returning structure
-	
-	char confFilePath[PATH_MAX];
-
-	int checksum = 0;
-	
-	if (run == 0) {				// the first time call
-
-		if ( (conf = fopen("/etc/loperIRCLogBot/bot.conf","r")) != NULL){
-			printf("Using configuration file stored at /etc/loperIRCLogBot/bot.conf\n"
-				"Prefere using the one, stored in this folder? Just rename or delete the one from /etc...\n");
-
-			for (i=0;(!feof(conf));i++){
-				fgets(fileArray[i], sizeof(fileArray[i]), conf);
-				if (i>=14){		// 15 lines is max size for config file
-					C.status = -2;
-					return C;
-				}
-			}
-		}
-		else {
-			strcpy(confFilePath, nick_or_path);
-			strcat(confFilePath, "bot.conf");		// add bot.conf to path-to-executable
-			
-			printf("Using configuration file stored at %s\n"
-				"Please note, configuration file also could be stored at '/etc/loperIRCLogBot/bot.conf' and have higher priority\n", confFilePath);
-			if ( (conf = fopen(confFilePath,"r")) != NULL) {
-				for (i=0;(!feof(conf));i++){
-					fgets(fileArray[i], sizeof(fileArray[i]), conf);
-					if (i>=14){		// 15 lines is max size for config file
-						C.status = -2;
-						return C;
-					}
-				}
-			}
-			else {
-				C.status = -2;			//unable to open file or it's too big = -2
-				return C;
-			}
-		}
-		fclose(conf);
-
-		#ifdef DEBUG_LOG	
-		printf("___Content of the file___\n");
-		for (i=0;i<15; i++){
-			printf("%s", fileArray[i]);
-		}
-		printf("______________________\n");
-		#endif
-
-		// Parsing configuration file			- IF STRING DOESN'T HAVE ":" - SKIP IT
-		for (i=0;i<15;i++){
-			if ( strstr(fileArray[i], ":") != NULL ) {    
-				st = strtok(fileArray[i], ": \t\n");	// if we can't get ANY parameter at the string, that have ":" inside, then skip this string
-				if (st != NULL){			
-					strcpy(sta[i][0],st);
-	
-					st = strtok(NULL, " \t\n");	// if we see anything before 'space' \t or \n
-
-					if (st == NULL){		// if we had a first parameter in string, (no matter was it set before ":" or after) and don't have the second one, 
-						C.status = -1;		// then we ruin the chain and returning error. 'Status' of incorrect config-file = "-1"
-						return C;
-					} 
-					else {
-						strcpy(sta[i][1], st);					
-
-						if ( strstr(sta[i][0], "link") != NULL ){	// if it's 'link', then add here everything user wrote
-							st = strtok(NULL, "\n");
-							while (st != NULL){
-								strcat(sta[i][1], st);
-								st = strtok(NULL, "\n");
-							}
-						}
-					}
-				}
-			}
-		}
-
-		for (i=0;i<15;i++){	
-			if ( strstr(sta[i][0], "server") != NULL )
-				checksum |= 1<<0;
-			else if ( strstr(sta[i][0], "channel") != NULL )
-				checksum |= 1<<1;
-			else if ( strstr(sta[i][0], "port") != NULL )
-				checksum |= 1<<2;
-			else if ( strstr(sta[i][0], "nick") != NULL )
-				checksum |= 1<<3;
-			else if ( strstr(sta[i][0], "username") != NULL )
-				checksum |= 1<<4;
-			else if ( strstr(sta[i][0], "realname") != NULL )
-				checksum |= 1<<5;
-			else if ( strstr(sta[i][0], "password") != NULL )
-				checksum |= 1<<6;
-			else if ( strstr(sta[i][0], "maxNickLength") != NULL )
-				checksum |= 1<<7;
-			else if ( strstr(sta[i][0], "logPath") != NULL )
-				checksum |= 1<<8;
-			else if ( strstr(sta[i][0], "link") != NULL )
-				checksum |= 1<<9;
-			else if ( strstr(sta[i][0], "reJoin") != NULL )
-				checksum |= 1<<10;
-			else if ( strstr(sta[i][0], "floodTimeOut") != NULL )
-				checksum |= 1<<11;
-				
-		}
-
-		if (checksum != 0b111111111111){
-			C.status = checksum;			// incorrect number of settings defined
-			return C;
-			}
-		else {
-			// Format array for return in case we're all good
-	
-			C.status = 0;				//  OK = 0.
-	
-			for (i=0; i<15; i++){
-				if ((strcmp(sta[i][0], "server")) == 0)
-					strcpy(C.server, sta[i][1]);
-				else if ( (strcmp(sta[i][0], "port")) == 0)
-					C.port = atoi(sta[i][1]);
-				else if ( (strcmp(sta[i][0], "channel")) == 0)
-					strcpy(C.channel, sta[i][1]);
-				else if ( (strcmp(sta[i][0], "nick")) == 0)
-					strcpy(C.nick, sta[i][1]);
-				else if ( (strcmp(sta[i][0], "username")) == 0)
-					strcpy(C.username, sta[i][1]);
-				else if ( (strcmp(sta[i][0], "realname")) == 0)
-					strcpy(C.realname, sta[i][1]);
-				else if ( (strcmp(sta[i][0], "password")) == 0)
-					strcpy(C.password, sta[i][1]);
-				else if ( (strcmp(sta[i][0], "maxNickLength")) == 0){
-					C.maxNickLength = atoi(sta[i][1]);
-					if (C.maxNickLength > 128){
-						C.maxNickLength = 128;			// now idiots could feel themselfs protected. Libircclient restriction IIRC set to 128 chars
-					}
-				}
-				else if ( (strcmp(sta[i][0], "logPath")) == 0){
-					if (strcmp(sta[i][1], "0") == 0)
-						strcpy(C.logPath, nick_or_path);
-					else {
-						if (sta[i][1][0] != '/'){
-							C.status = -3;
-							return C;
-						}
-						else{
-							strcpy(C.logPath, sta[i][1]);
-							if ( C.logPath[strlen(C.logPath)] != '/' )
-								strcat (C.logPath, "/");
-						}
-					}
-				}
-				else if ( (strcmp(sta[i][0], "link")) == 0){
-					if (strcmp(sta[i][1], "0") == 0)
-						strcpy(C.link, ";)");
-					else
-						strcpy(C.link, sta[i][1]);
-				}
-				else if ( (strcmp(sta[i][0], "reJoin")) == 0){
-					if (strcmp(sta[i][1], "yes") == 0 || strcmp(sta[i][1], "Yes") == 0 )
-						C.reJoin = 1;
-					else
-						C.reJoin = 0;
-				}
-				else if ( (strcmp(sta[i][0], "floodTimeOut")) == 0)
-					C.floodTimeOut = atoi(sta[i][1]);
-			}
-			if (strlen(C.nick) > C.maxNickLength)
-				C.nick[C.maxNickLength] = '\0';				// yeah, they will love it, before set nick name longer then 128 char =(
-		}
-		// ++++++++++++++++++++++++++++++++++++++++++++++
-	
-		#ifdef DEBUG_LOG
-		printf("___Recieved keys from the file___\n");
-		for (i=0;i<15; i++){
-			printf("%s - %s\n", sta[i][0], sta[i][1]);
-		}
-		printf("______________________\n");
-		#endif
-
-		return C;
-	}
-	else if ( run == 1 ){
-		return C;				// just return already loaded structure by request
-	}
-	else if ( run == 2){				// save nick recieved
-		strcpy(C.nick, nick_or_path);
-		return C;
-	}
-}
 
 int createDir(char * logdir, char * newDirName){
 	struct stat st = {0};
@@ -271,12 +51,12 @@ const char * printTimeStamp(){			// const function, static array.. one say this 
 
 // Mainly used to update is_alive
 void  event_ctcp_rep(irc_session_t *session, const char *event, const char *origin, const char **params, unsigned int count){	// handle own ctcp requests - get recieved data and do something with it
-	configuration C = load_config(1, "");		//load config to get current nickname
+	configuration *C = load_config(RETURN_STRUCT, "");		//load config to get current nickname
 
 	#ifdef PING_DEBUG
 	printf("\nReply from my CTCP, where USER = %s\n", origin);
 	#endif
-	if (strncmp(origin, C.nick, strlen(C.nick)) == 0){		// if bot generated response, then it's ping for internal use. (Ok, documentation is 80% clear on this, it will work but in future should be checked)
+	if (strncmp(origin, C->nick, strlen(C->nick)) == 0){		// if bot generated response, then it's ping for internal use. (Ok, documentation is 80% clear on this, it will work but in future should be checked)
 		is_alive(1, time(NULL), session);
 	}
 }
@@ -291,7 +71,7 @@ void  event_ctcp_rep(irc_session_t *session, const char *event, const char *orig
 int is_alive( int state, time_t timeGot, irc_session_t * session){				// in future, it should be stand-alone thread
 	static time_t timeSav;	
 	static int pingRequestSent = 0;			// 0 - not sent, 1 - already sent
-	configuration C = load_config(1, "");		//load config to get current nickname
+	configuration *C = load_config(RETURN_STRUCT, "");		//load config to get current nickname
 
 	#ifdef PING_DEBUG
 	printf("is_alive:ping = %d\n", pingRequestSent);
@@ -305,7 +85,7 @@ int is_alive( int state, time_t timeGot, irc_session_t * session){				// in futu
 				printf("  stored time   = %ld\n",timeSav);
 				printf("  recieved time = %ld\n",timeGot);
 				#endif
-				irc_cmd_ctcp_request(session, C.nick, "PING");
+				irc_cmd_ctcp_request(session, C->nick, "PING");
 				pingRequestSent = 1;
 				return 0;
 			}
@@ -336,11 +116,11 @@ void event_connect (irc_session_t * session, const char * event, const char * or
 {	
 	is_alive(1, time(NULL), session );				// this time really 'initial' timestamp written into the watchdog function
 
-	configuration C = load_config(1, "");				// dump_event (session, event, origin, params, count);
+	configuration *C = load_config(RETURN_STRUCT, "");				// dump_event (session, event, origin, params, count);
 	#ifdef X_MODE
 	irc_cmd_user_mode (session, "+x");			// TODO clarify this shit
 	#endif
-	irc_cmd_join (session, C.channel, 0);
+	irc_cmd_join (session, C->channel, 0);
 }
 
 void dump_event (irc_session_t * session, const char * event, const char * origin, const char ** params, unsigned int count)
@@ -358,29 +138,26 @@ void dump_event (irc_session_t * session, const char * event, const char * origi
 	
 	}
 #endif
-
 	static time_t floodTrackTime = 0;
-
 	char nowTime[20];
-
 	char nickBuf[128];
 	char hostBuf[1024];
-
 	time_t now = time(NULL);
+	char realLogPath[PATH_MAX];
 
 	FILE * fp;		// set FD for the file for logs
 	
-	configuration C = load_config(1, "");
-
+	configuration *C = load_config(RETURN_STRUCT, "");
+	
 	// Set name for the log file
-
 	irc_target_get_nick (origin, nickBuf, 128);
 	irc_target_get_host (origin, hostBuf, 1024);	
 	
 	strftime(nowTime, 20, "logs/%Y-%m-%d.txt", localtime(&now));
-	strcat(C.logPath, nowTime);		// now C.logPath have the correct name of the file
+	strcpy(realLogPath, C->logPath);
+	strcat(realLogPath, nowTime);
 
- 	if ( (fp = fopen (C.logPath, "ab")) != NULL )
+ 	if ( (fp = fopen (realLogPath, "ab")) != NULL )
 	{
 		strftime(nowTime,20, "[%H:%M:%S] ", localtime(&now));
 
@@ -397,16 +174,16 @@ void dump_event (irc_session_t * session, const char * event, const char * origi
 
 		if (!strcmp(event,"KICK")){
 		// Reloading configuration in case our nick has been changed recently
-			if ( !(strcmp(params[1], C.nick)) && C.reJoin == 1 ){
+			if ( !(strcmp(params[1], C->nick)) && C->reJoin == 1 ){
 				event_connect (session, event, origin, params, count);
 			}
 		}
 		else if (!strcmp(event, "CHANNEL"))					// works like shit. Should be separated thread
-			if (strncmp(params[1], C.nick, strlen(C.nick)) == 0 )
-				if ((now - floodTrackTime) >= C.floodTimeOut){
-					irc_cmd_msg(session, params[0], C.link);
+			if (strncmp(params[1], C->nick, strlen(C->nick)) == 0 )	
+				if ((now - floodTrackTime) >= C->floodTimeOut){
+					irc_cmd_msg(session, params[0], C->link);
 					floodTrackTime = now;
-					fprintf(fp,"%s <%s>: %s\n",nowTime, C.nick, C.link);
+					fprintf(fp,"%s <%s>: %s\n",nowTime, C->nick, C->link);
 				}
 
 		fclose (fp);
@@ -459,29 +236,29 @@ void event_join (irc_session_t * session, const char * event, const char * origi
 
 void nick_change(irc_session_t * session){		
 	static char append[] = "|0";
-	configuration C = load_config(1, "");
+	configuration *C = load_config(RETURN_STRUCT, "");
 	
 	if ( append[1] > '9')				// Refactoring request
 		append[1] = '0';			// if all your nicknames with |0 |2 ... |9 are already occupied, we're fucked up. Really, there is no good solution in this code.
 	
 	// Let's say that we have string like 1234567|0, and maxNickLength = 10, then we see, that string length is greater (9) then maxNickLength-2, but also we've already appended something like "|0" into it, then
 	// we could check it and wipe. Otherwise we wipe 2 last chars.
-	if ( strlen(C.nick) > (C.maxNickLength - 2) ){
-		if ( (C.nick[C.maxNickLength-3] == '|') && (C.nick[C.maxNickLength-2] >= '0') && (C.nick[C.maxNickLength-2] <= '9') )
-			C.nick[C.maxNickLength-3] = '\0';
+	if ( strlen(C->nick) > (C->maxNickLength - 2) ){
+		if ( (C->nick[C->maxNickLength-3] == '|') && (C->nick[C->maxNickLength-2] >= '0') && (C->nick[C->maxNickLength-2] <= '9') )
+			C->nick[C->maxNickLength-3] = '\0';
 		else
-			C.nick[C.maxNickLength-2] = '\0';
+			C->nick[C->maxNickLength-2] = '\0';
 	}
-	if ( C.nick[strlen(C.nick)-2] == '|' )
-		C.nick[strlen(C.nick)-1] = append[1];
+	if ( C->nick[strlen(C->nick)-2] == '|' )
+		C->nick[strlen(C->nick)-1] = append[1];
 	else
-		strncat(C.nick, append, 2);
+		strncat(C->nick, append, 2);
 	
 	append[1]++;
 
-	C = load_config(2, C.nick);			
+	C = load_config(NICK_CHANGE, C->nick);			
 
-	irc_cmd_nick(session, C.nick);
+	irc_cmd_nick(session, C->nick);
 }
 
 void event_numeric (irc_session_t * session, unsigned int event, const char * origin, const char ** params, unsigned int count)
@@ -498,7 +275,7 @@ void event_numeric (irc_session_t * session, unsigned int event, const char * or
 static void event_notice (irc_session_t * session, const char * event, const char * origin, const char ** params, unsigned int count)
 {
 	char nickBuf[1024];		// too big??
-	configuration C = load_config(1,"");
+	configuration *C = load_config(RETURN_STRUCT,"");
 
 	dump_event (session, event, origin, params, count);
 
@@ -510,7 +287,7 @@ static void event_notice (irc_session_t * session, const char * event, const cha
 	if ( strcasecmp (nickBuf, "nickserv") )
 		return;
 	if ( (strstr (params[1], "This nickname is registered") != NULL) || (strstr (params[1], "This nickname is owned by someone else") != NULL) ){
-		irc_send_raw(session, "nickserv IDENTIFY %s", C.password);
+		irc_send_raw(session, "nickserv IDENTIFY %s", C->password);
 	}
 	else if( strstr (params[1], "Password accepted") != NULL )
 		printf ("Nickserv authentication succeeded\n");
@@ -600,6 +377,12 @@ void reportSettingsIssues(int sum){
 		case -3:
 			printf("Configuration file issue: 'logPath' is not defined as absolute path\n");
 			break;
+		case -4:
+			printf("Unable to allocate memory.\n");
+			break;
+		case -5:
+			printf("Internal error.\n");
+			break;
 		default:
 			printf("Configuration file issue. Next field(s) not found:\n");
 			for (i=0; i<12; i++)
@@ -621,7 +404,7 @@ void silentMode(){
 }
 
 int main(int argc, char *argv[]) {
-	configuration config;
+	configuration *config;
 	
 	irc_callbacks_t callbacks;	// The IRC callbacks structure
 	irc_session_t * session;
@@ -684,8 +467,8 @@ int main(int argc, char *argv[]) {
 		return 0;
 	}
 //	-================================================================================================-
-	config = load_config(0, dest);
-	if (config.status == 0) {
+	config = load_config(CONFIG_INIT, dest);
+	if (config->status == 0) {
 		printf("\t--------------------\n"
 			"\t%s\n"
 			"\t\tSETTINGS\n"
@@ -704,22 +487,22 @@ int main(int argc, char *argv[]) {
 			"floodTimeOut    - %d\n"
 			"\t--------\n", 
 			printTimeStamp(),
-			config.server, 
-			config.channel, 
-			config.port, 
-			config.nick, 
-			config.username, 
-			config.realname, 
-			config.password, 
-			config.maxNickLength, 
-			config.logPath, 
-			config.link, 
-			config.reJoin == 0?"No":"Yes",
-			config.floodTimeOut);
-		if ( createDir(config.logPath, "logs") != 0){				// set logs directory
+			config->server, 
+			config->channel, 
+			config->port, 
+			config->nick, 
+			config->username, 
+			config->realname, 
+			config->password, 
+			config->maxNickLength, 
+			config->logPath, 
+			config->link, 
+			config->reJoin == 0?"No":"Yes",
+			config->floodTimeOut);
+		if ( createDir(config->logPath, "logs") != 0){				// set logs directory
 			printf ("Unable to create directory for log files (%s)\n"
 				"Please make sure that you have premissions to write in this directory\n", 
-				config.logPath);
+				config->logPath);
 			return 1;
 		}
 		else {
@@ -763,7 +546,7 @@ int main(int argc, char *argv[]) {
 		                	irc_option_set( session, LIBIRC_OPTION_SSL_NO_VERIFY );
 				
 	        			// Connect to a regular IRC server
-					if ( irc_connect (session, config.server, config.port, 0, config.nick, config.username, config.realname ) ){
+					if ( irc_connect (session, config->server, config->port, 0, config->nick, config->username, config->realname ) ){
 						
 						printf ("%s Could not connect: %s\n", printTimeStamp(), irc_strerror (irc_errno(session)));
 						// return 1;						//give a try once again
@@ -827,7 +610,7 @@ int main(int argc, char *argv[]) {
 		return 0; // never happens
 	}
 	else {
-		reportSettingsIssues(config.status);
+		reportSettingsIssues(config->status);
 		return 1;
 	}
 	return 0;

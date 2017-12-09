@@ -8,7 +8,7 @@
 // Set path to loperIRCLogBot.pid file for daemon mode
 #define DEF_PID_FILE	"/var/run/loperIRCLogBot.pid"	// re-define in configuration file
 // Current version of the program
-#define __CUR_VER__ "1.4"
+#define __CUR_VER__	"1.5"
 
 #define NPING_DEBUG
 #define NDEBUG
@@ -28,10 +28,10 @@
   -s, --silent          Silent mode. All program messages stores to the 'output.txt' file\n \
   -v, --version         Application version\n\n \
       --help            Show this message and terminate application\n\n \
-Configuration stores at the ./bot.conf. Please pay attention: maximum lenght of the file is 10 strings. In case if you don't use password for your nickname set it to 0.\n \
+Configuration stores at the ./bot.conf. In case if you don't use password for your nickname set it to 0.\n \
 Log files stores at the './logs' folder, if in 'bot.conf' you defined '0' for this setting, otherwise it's stores at 'YOUR_PATH/logs'. Files have next format: YYY-MM-DD.txt\n \
 Password for the nickname is taken form the configuration file. '0' stands for 'no password'\n \
-'Link' is the link that returns when someone says 'bot_name something-something'. '0' stands for no link\n \
+'Link' is the link that returns when someone says 'bot_name something-something'.\n \
 Be smart! Don't use too long nicknames. Usually they used should 30 characters long but may vary from server to server. Don't worry if your nickname shorter, but don't let it be greater then 128 characters.\n"
 
 #define DEF_DEFAULT_TEMPLATE \

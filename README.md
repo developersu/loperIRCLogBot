@@ -39,7 +39,6 @@ If you have bot.conf file at /etc/loperIRCLogBot folder it won't be deleted. So 
 ## Configuration
 
 Application settings should be set on /etc/loperIRCLogBot/bot.conf OR ./bin/bot.conf file. You could generate template by passing -g option: './loperIRCLogBot -g'. 
-Configuration file contains 15 lines, so make sure that you didn't define any sensetive information below these 15 lines.
 Here is an example:
 ```
 server:          irc.example.com
